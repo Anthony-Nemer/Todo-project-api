@@ -8,9 +8,9 @@ const app = express();
 
 // 1) CORS (list ALL origins you serve the frontend from)
 const allowedOrigins = [
-  "https://<your-gh-username>.github.io",
-  "https://<your-gh-username>.github.io/<repo>", // if hosted under a path
-  "https://your-custom-domain.com"
+  "https://Anthony-Nemer.github.io",
+  "https://Anthony-Nemer.github.io/Todo-project-api", // if hosted under a path
+  "https://bebywebsitetodo.space"
 ];
 
 app.use(cors({
