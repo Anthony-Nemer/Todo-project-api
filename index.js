@@ -1,41 +1,48 @@
-// index.js
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 
 dotenv.config();
-
 const app = express();
 
-// ===== Basic hardening for "single user" =====
-// Optional: set API_TOKEN in your Render/host dashboard and your frontend will send it.
-const API_TOKEN = process.env.API_TOKEN; // e.g. 'supersecrettoken'
-
-// Only allow your site(s)
+// 1) CORS (list ALL origins you serve the frontend from)
 const allowedOrigins = [
-  "https://<your-gh-pages-username>.github.io", // if you also view from GH pages domain
-  "https://<your-custom-domain.com>",           // your custom domain for the React app
+  "https://<your-gh-username>.github.io",
+  "https://<your-gh-username>.github.io/<repo>", // if hosted under a path
+  "https://your-custom-domain.com"
 ];
 
 app.use(cors({
   origin: (origin, cb) => {
-    // allow no-origin (curl/Postman) and allowlisted origins
     if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error("Not allowed by CORS"));
-  },
-  credentials: false
+  }
 }));
+
+// 2) Handle OPTIONS preflight for all routes
+app.options("*", cors());
+
+// 3) Body parser
 app.use(express.json());
 
-// Optional auth middleware
+// 4) Public endpoints BEFORE auth
+app.get("/", (_req, res) => res.json({ ok: true, service: "todo-api" }));
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// 5) Optional auth middleware for everything else
+const API_TOKEN = process.env.API_TOKEN;
 app.use((req, res, next) => {
-  if (!API_TOKEN) return next(); // if you didn't set one, skip
+  // Let health & root through
+  if (req.path === "/" || req.path === "/health") return next();
+
+  if (!API_TOKEN) return next(); // auth disabled
+
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (token !== API_TOKEN) return res.status(401).json({ message: "Unauthorized" });
   next();
-});
+})
 
 // Mongo connect
 const MONGO_URI = process.env.MONGO_URI;
