@@ -6,64 +6,65 @@ import dotenv from "dotenv";
 dotenv.config();
 const app = express();
 
-// 1) CORS (list ALL origins you serve the frontend from)
+/* ===== CORS (list your frontend origins) ===== */
 const allowedOrigins = [
-  "https://Anthony-Nemer.github.io",
-  "https://Anthony-Nemer.github.io/Todo-project-api", // if hosted under a path
-  "https://bebywebsitetodo.space"
+  "https://anthony-nemer.github.io",
+  "https://bebywebsitetodo.space",
 ];
-
-app.use(cors({
-  origin: (origin, cb) => {
+const corsOptions = {
+  origin(origin, cb) {
+    // allow same-origin tools (curl/Postman) with no Origin header
     if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error("Not allowed by CORS"));
-  }
-}));
+  },
+  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false,
+};
 
-// 2) Handle OPTIONS preflight for all routes
-app.options("*", cors());
+app.use(cors(corsOptions));
+// ✅ Express 5 fix: use RegExp instead of "*"
+app.options(/.*/, cors(corsOptions));
 
-// 3) Body parser
 app.use(express.json());
 
-// 4) Public endpoints BEFORE auth
+/* ===== Public endpoints ===== */
 app.get("/", (_req, res) => res.json({ ok: true, service: "todo-api" }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// 5) Optional auth middleware for everything else
+/* ===== Optional bearer-token auth for everything else ===== */
 const API_TOKEN = process.env.API_TOKEN;
 app.use((req, res, next) => {
-  // Let health & root through
   if (req.path === "/" || req.path === "/health") return next();
-
   if (!API_TOKEN) return next(); // auth disabled
 
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (token !== API_TOKEN) return res.status(401).json({ message: "Unauthorized" });
   next();
-})
+});
 
-// Mongo connect
-const MONGO_URI = process.env.MONGO_URI;
-if (!MONGO_URI) {
-  console.error("Missing MONGO_URI");
+/* ===== Mongo connect ===== */
+const rawUri = process.env.MONGO_URI;
+if (!rawUri || !/^mongodb(\+srv)?:\/\//i.test(rawUri)) {
+  console.error("❌ MONGO_URI missing/invalid. Must start with mongodb:// or mongodb+srv://");
   process.exit(1);
 }
-await mongoose.connect(MONGO_URI);
+const safeUri = rawUri.replace(/\/\/.*@/, "//<redacted>@");
+console.log("✅ Using MONGO_URI:", safeUri);
 
-// Model
-const Task = mongoose.model("Task", new mongoose.Schema(
-  {
-    text: { type: String, required: true },
-    completed: { type: Boolean, default: false },
-  },
-  { timestamps: true }
-));
+await mongoose.connect(rawUri, { serverSelectionTimeoutMS: 10000, family: 4 });
 
-// Routes
-app.get("/health", (_req, res) => res.json({ ok: true }));
+/* ===== Model ===== */
+const Task = mongoose.model(
+  "Task",
+  new mongoose.Schema(
+    { text: { type: String, required: true }, completed: { type: Boolean, default: false } },
+    { timestamps: true }
+  )
+);
 
+/* ===== Routes ===== */
 app.get("/tasks", async (_req, res) => {
   const tasks = await Task.find().sort({ createdAt: 1 });
   res.json(tasks);
@@ -81,10 +82,7 @@ app.patch("/tasks/:id", async (req, res) => {
   const { text, completed } = req.body;
   const updated = await Task.findByIdAndUpdate(
     id,
-    {
-      ...(text !== undefined && { text }),
-      ...(completed !== undefined && { completed }),
-    },
+    { ...(text !== undefined && { text }), ...(completed !== undefined && { completed }) },
     { new: true }
   );
   if (!updated) return res.status(404).json({ message: "not found" });
@@ -92,11 +90,11 @@ app.patch("/tasks/:id", async (req, res) => {
 });
 
 app.delete("/tasks/:id", async (req, res) => {
-  const { id } = req.params;
-  const ok = await Task.findByIdAndDelete(id);
+  const ok = await Task.findByIdAndDelete(req.params.id);
   if (!ok) return res.status(404).json({ message: "not found" });
   res.status(204).end();
 });
 
+/* ===== Start ===== */
 const port = process.env.PORT || 3001;
 app.listen(port, () => console.log(`API listening on ${port}`));
